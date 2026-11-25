@@ -69,6 +69,18 @@ input::placeholder{color:#a6b3b0}
 .lv-pt{font-size:12px;color:var(--sub);font-variant-numeric:tabular-nums}
 .bar{height:5px;border-radius:99px;background:var(--line);margin-top:9px;overflow:hidden}
 .bar>i{display:block;height:100%;background:var(--brand);border-radius:99px;transition:width .4s}
+.week-head{display:flex;justify-content:space-between;align-items:center;margin-top:17px;font-size:11px;color:var(--sub)}
+.week-head b{color:var(--brand-deep);font-weight:600}
+.week{display:grid;grid-template-columns:repeat(7,1fr);gap:6px;margin-top:8px}
+.week-cell{text-align:center}
+.week-box{height:27px;border-radius:7px;background:var(--bg);border:1px solid var(--line);
+  display:flex;align-items:center;justify-content:center;font-size:11px;color:#a6b3b0;font-variant-numeric:tabular-nums}
+.week-box.l1{background:#d4ebe6;border-color:#d4ebe6;color:var(--brand-deep)}
+.week-box.l2{background:#94d1c6;border-color:#94d1c6;color:#0b4039}
+.week-box.l3{background:var(--brand);border-color:var(--brand);color:#fff}
+.week-day{font-size:10px;color:var(--sub);margin-top:4px}
+.week-cell.today .week-day{color:var(--brand);font-weight:700}
+.chip.dice{border-style:dashed;color:var(--brand-deep)}
 
 /* section title */
 .sec-title{display:flex;align-items:center;justify-content:space-between;margin:0 0 16px}
@@ -153,6 +165,7 @@ input::placeholder{color:#a6b3b0}
       <button class="chip" data-v="写第一行">写第一行</button>
       <button class="chip" data-v="读一页书">读一页书</button>
       <button class="chip" data-v="收拾桌面">收拾桌面</button>
+      <button class="chip dice" id="ideaBtn">给我一件小事</button>
     </div>
     <button class="launch" id="launchBtn">启动 2 分钟</button>
     <div class="hint">不要求做完，只要开始。</div>
@@ -169,6 +182,8 @@ input::placeholder{color:#a6b3b0}
       <span class="lv-pt"><b id="sPoints">0</b> 分</span>
     </div>
     <div class="bar"><i id="lvBar" style="width:0%"></i></div>
+    <div class="week-head"><span>最近 7 天</span><b id="goalText">今日目标 0/3</b></div>
+    <div class="week" id="weekLine"></div>
   </section>
 
   <section class="card">
@@ -224,13 +239,22 @@ input::placeholder{color:#a6b3b0}
   var KEY = "kickoff_data_v1";
   var LIMIT = 120;
   var CIRC = 2 * Math.PI * 113;
-  var DEF = { points:0, total:0, streak:0, best:0, lastDate:"", today:{date:"",count:0}, history:[], ach:[], sound:true };
+  var DEF = { points:0, total:0, streak:0, best:0, lastDate:"", today:{date:"",count:0}, daily:{}, goalDay:"", history:[], ach:[], sound:true };
+  var GOAL = 3;
+  var lastGoalHit = false;
   var S;
   try { S = Object.assign({}, DEF, JSON.parse(localStorage.getItem(KEY) || "{}")); }
   catch(e) { S = Object.assign({}, DEF); }
   if (!S.today || typeof S.today !== "object") S.today = {date:"",count:0};
   if (!Array.isArray(S.history)) S.history = [];
   if (!Array.isArray(S.ach)) S.ach = [];
+  if (!S.daily || typeof S.daily !== "object"){
+    S.daily = {};
+    S.history.forEach(function(h){
+      var ds = dstr(new Date(h.t));
+      S.daily[ds] = (S.daily[ds] || 0) + 1;
+    });
+  }
 
   var ACH = [
     {id:"first", n:"破冰", d:"第一次启动", s:"✦"},
@@ -275,6 +299,11 @@ input::placeholder{color:#a6b3b0}
     }
     S.total++; S.points += 10;
     if (S.today.date !== t) S.today = {date:t, count:1}; else S.today.count++;
+    S.daily[t] = (S.daily[t] || 0) + 1;
+    var dkeys = Object.keys(S.daily).sort();
+    if (dkeys.length > 30) dkeys.slice(0, dkeys.length - 30).forEach(function(k){ delete S.daily[k]; });
+    lastGoalHit = false;
+    if (S.today.count === GOAL && S.goalDay !== t){ S.goalDay = t; lastGoalHit = true; }
     S.history.unshift({t:Date.now(), task:task || "一次启动", sec:sec});
     S.history = S.history.slice(0, 40);
     var got = checkAch();
@@ -293,6 +322,19 @@ input::placeholder{color:#a6b3b0}
     $("lvName").textContent = "Lv." + li.lv + " " + li.name;
     $("lvBar").style.width = Math.min(100, li.cur) + "%";
     $("achCount").textContent = S.ach.length + " / " + ACH.length;
+
+    var tc = S.today.date === t ? S.today.count : 0;
+    $("goalText").textContent = tc >= GOAL ? "今日已达标 ✓" : ("今日目标 " + tc + "/" + GOAL);
+    var names = ["日","一","二","三","四","五","六"];
+    var cells = [];
+    for (var i=6;i>=0;i--){
+      var d = new Date(); d.setHours(12,0,0,0); d.setDate(d.getDate()-i);
+      var ds = dstr(d), n = S.daily[ds] || 0;
+      var lv = n >= 3 ? 3 : (n === 2 ? 2 : (n === 1 ? 1 : 0));
+      cells.push('<div class="week-cell'+(i===0?" today":"")+'"><div class="week-box'+(lv?" l"+lv:"")+'">'+
+                 (n || "·")+'</div><div class="week-day">'+names[d.getDay()]+'</div></div>');
+    }
+    $("weekLine").innerHTML = cells.join("");
 
     $("badges").innerHTML = ACH.map(function(a){
       var on = S.ach.indexOf(a.id) >= 0;
@@ -464,7 +506,35 @@ input::placeholder{color:#a6b3b0}
     var got = markDone(timer.task, timer.sec);
     closeFocus();
     celebrate(); ding();
-    toast(got.length ? ("新成就解锁：" + got.map(function(a){return a.n;}).join("、")) : ("已记录，连续 " + S.streak + " 天"));
+    var parts = [];
+    if (got.length) parts.push("新成就：" + got.map(function(a){return a.n;}).join("、"));
+    if (lastGoalHit) parts.push("今日目标达成！");
+    if (!parts.length) parts.push("已记录，连续 " + S.streak + " 天");
+    toast(parts.join(" · "));
+  }
+
+  var IDEAS = [
+    "打开文件，光标放进去",
+    "写下第一行，哪怕是一句废话",
+    "给相关的人发一句话",
+    "把要用的东西拿出来放好",
+    "只看第一页，划三行重点",
+    "把大任务写成三个小词",
+    "清理桌面上最碍眼的一件东西",
+    "把想法用一句话发给自己",
+    "打开文件，另存一个新版本",
+    "站起来，走到该去的位置"
+  ];
+  var lastIdea = -1;
+  function fillIdea(){
+    var i;
+    do { i = Math.floor(Math.random()*IDEAS.length); } while (i === lastIdea && IDEAS.length > 1);
+    lastIdea = i;
+    $("taskInput").value = IDEAS[i];
+    var chips = $("quick").querySelectorAll(".chip");
+    for (var j=0;j<chips.length;j++) chips[j].classList.remove("on");
+    $("ideaBtn").classList.add("on");
+    toast("换了一件小事，点启动就行");
   }
 
   // events
@@ -472,6 +542,7 @@ input::placeholder{color:#a6b3b0}
   $("taskInput").addEventListener("keydown", function(e){ if(e.key === "Enter") startFocus(); });
   $("quick").addEventListener("click", function(e){
     var b = e.target.closest(".chip"); if(!b) return;
+    if (b.id === "ideaBtn"){ fillIdea(); return; }
     var chips = $("quick").querySelectorAll(".chip");
     for (var i=0;i<chips.length;i++) chips[i].classList.remove("on");
     b.classList.add("on");
@@ -510,7 +581,7 @@ input::placeholder{color:#a6b3b0}
       return;
     }
     clearTimeout(armT); arm = false; b.textContent = "清空数据"; b.classList.remove("arm");
-    S = Object.assign({}, DEF, {today:{date:"",count:0}, history:[], ach:[]});
+    S = Object.assign({}, DEF, {today:{date:"",count:0}, daily:{}, goalDay:"", history:[], ach:[]});
     save(); render(); syncSound(); toast("已清空，重新开始就好");
   });
 
@@ -520,6 +591,17 @@ input::placeholder{color:#a6b3b0}
     if (!deferred) return;
     deferred.prompt();
     deferred.userChoice.then(function(){ deferred = null; $("installBtn").classList.add("hide"); });
+  });
+
+  var hiddenAt = 0;
+  document.addEventListener("visibilitychange", function(){
+    if (timer.phase !== "run") return;
+    if (document.hidden){ hiddenAt = Date.now(); return; }
+    if (hiddenAt && Date.now() - hiddenAt > 3000){
+      var left = Math.max(0, Math.ceil((timer.endAt - Date.now())/1000));
+      toast("还在启动中 · 剩 " + left + " 秒，回来继续");
+      hiddenAt = 0;
+    }
   });
 
   if ("serviceWorker" in navigator){

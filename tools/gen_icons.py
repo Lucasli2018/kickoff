@@ -44,3 +44,8 @@ def make(size, name):
 make(192, "icon-192.png")
 make(512, "icon-512.png")
 make(180, "icon-180.png")  # apple-touch-icon
+
+# Browser tab favicon: reuse the high-res icon and let Pillow rasterize sizes.
+src = os.path.join(OUT, "icon-512.png")
+Image.open(src).save(os.path.join(OUT, "favicon.ico"), sizes=[(16, 16), (32, 32), (48, 48)])
+print("wrote favicon.ico")

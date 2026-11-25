@@ -8,6 +8,8 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-touch-icon" href="icons/icon-180.png">
 <link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" type="image/svg+xml" href="favicon.svg">
+<link rel="icon" type="image/x-icon" href="icons/favicon.ico">
 <title>起步 · 两分钟启动器</title>
 <style>
 :root{
@@ -141,7 +143,7 @@ input::placeholder{color:#a6b3b0}
 
   <section class="card hero">
     <h2>先做两分钟。</h2>
-    <p class="lead">拖延的人不缺计划，只缺一个开始。</p>
+    <p class="lead" id="lead">拖延的人不缺计划，只缺一个开始。</p>
     <label class="field-label" for="taskInput">此刻，只要做一件小事</label>
     <div class="input-row">
       <input id="taskInput" type="text" maxlength="40" placeholder="例如：打开文档，写第一行">
@@ -309,6 +311,53 @@ input::placeholder{color:#a6b3b0}
     }).join("") : '<div class="empty">还没有记录，写下第一件小事吧。</div>';
   }
 
+  // browser tab icon: static by default, live countdown ring while running
+  var favLinks = document.querySelectorAll('link[rel="icon"]');
+  var favLink = favLinks.length ? favLinks[0] : null;
+  var favCanvas = document.createElement("canvas");
+  favCanvas.width = favCanvas.height = 64;
+  var fctx = favCanvas.getContext("2d");
+  var lastFavLeft = -1;
+
+  function setFavicon(href){ if (favLink) favLink.href = href; }
+  function roundRect(ctx,x,y,w,h,r){
+    ctx.beginPath();
+    ctx.moveTo(x+r,y);
+    ctx.arcTo(x+w,y,x+w,y+h,r);
+    ctx.arcTo(x+w,y+h,x,y+h,r);
+    ctx.arcTo(x,y+h,x,y,r);
+    ctx.arcTo(x,y,x+w,y,r);
+    ctx.closePath();
+  }
+  function drawFavicon(left){
+    if (left === lastFavLeft) return;
+    lastFavLeft = left;
+    var c = fctx;
+    c.clearRect(0,0,64,64);
+    c.fillStyle = "#0f766e";
+    roundRect(c, 3, 3, 58, 58, 14);
+    c.fill();
+    c.strokeStyle = "rgba(255,255,255,.28)";
+    c.lineWidth = 6;
+    c.beginPath(); c.arc(32,32,19,0,Math.PI*2); c.stroke();
+    var ratio = Math.max(0, Math.min(1, left / LIMIT));
+    if (ratio > 0){
+      c.strokeStyle = "#ffffff";
+      c.lineWidth = 6;
+      c.lineCap = "round";
+      c.beginPath();
+      c.arc(32,32,19, -Math.PI/2, -Math.PI/2 + Math.PI*2*ratio);
+      c.stroke();
+    }
+    c.fillStyle = "#ffffff";
+    c.font = "bold 20px -apple-system, Arial, sans-serif";
+    c.textAlign = "center";
+    c.textBaseline = "middle";
+    c.fillText(String(left), 32, 33);
+    setFavicon(favCanvas.toDataURL("image/png"));
+  }
+  function resetFavicon(){ lastFavLeft = -1; setFavicon("favicon.svg"); }
+
   var toastT;
   function toast(msg){
     var el = $("toast"); el.textContent = msg; el.classList.add("show");
@@ -329,6 +378,26 @@ input::placeholder{color:#a6b3b0}
       setTimeout(function(){ ctx.close(); }, 750);
     }catch(e){}
   }
+  function dingEnd(){
+    if (!S.sound) return;
+    try{
+      var AC = window.AudioContext || window.webkitAudioContext;
+      var ctx = new AC();
+      [0, 0.18].forEach(function(delay, i){
+        var o = ctx.createOscillator(), g = ctx.createGain();
+        o.type = "sine";
+        o.frequency.value = i === 0 ? 660 : 880;
+        g.gain.setValueAtTime(0.0001, ctx.currentTime + delay);
+        g.gain.exponentialRampToValueAtTime(0.12, ctx.currentTime + delay + 0.02);
+        g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + delay + 0.35);
+        o.connect(g); g.connect(ctx.destination);
+        o.start(ctx.currentTime + delay);
+        o.stop(ctx.currentTime + delay + 0.36);
+      });
+      setTimeout(function(){ ctx.close(); }, 900);
+    }catch(e){}
+  }
+
   function celebrate(){
     var box = $("confetti");
     var colors = ["#0f766e","#5eead4","#b98a2e","#9ab3ae","#ffffff"];
@@ -369,12 +438,15 @@ input::placeholder{color:#a6b3b0}
     var ratio = left / LIMIT;
     $("fTime").textContent = pad(Math.floor(left/60)) + ":" + pad(left%60);
     $("ringFg").style.strokeDashoffset = (CIRC * (1-ratio)).toFixed(1);
+    drawFavicon(left);
     if (left <= 0) showDone(true);
     else timer.raf = requestAnimationFrame(tick);
   }
   function showDone(natural){
     timer.phase = "done";
     cancelAnimationFrame(timer.raf);
+    resetFavicon();
+    if (natural) dingEnd();
     timer.sec = natural ? LIMIT : Math.max(1, Math.round((Date.now()-timer.startAt)/1000));
     $("runPanel").classList.add("hide");
     $("donePanel").classList.remove("hide");
@@ -385,6 +457,7 @@ input::placeholder{color:#a6b3b0}
   function closeFocus(){
     timer.phase = "idle";
     cancelAnimationFrame(timer.raf);
+    resetFavicon();
     $("focus").classList.remove("show");
   }
   function commitDone(){
@@ -413,6 +486,16 @@ input::placeholder{color:#a6b3b0}
   $("commitBtn").addEventListener("click", commitDone);
   $("againBtn").addEventListener("click", startFocus);
   $("endBtn").addEventListener("click", function(){ closeFocus(); });
+
+  $("badges").addEventListener("click", function(e){
+    var b = e.target.closest(".badge");
+    if (!b) return;
+    var idx = Array.prototype.indexOf.call($("badges").children, b);
+    var a = ACH[idx];
+    if (!a) return;
+    var on = S.ach.indexOf(a.id) >= 0;
+    toast(a.n + " · " + a.d + (on ? "（已解锁）" : "（未解锁）"));
+  });
 
   function syncSound(){ $("soundBtn").textContent = "提示音：" + (S.sound ? "开" : "关"); }
   $("soundBtn").addEventListener("click", function(){
@@ -443,6 +526,14 @@ input::placeholder{color:#a6b3b0}
     window.addEventListener("load", function(){ navigator.serviceWorker.register("./sw.js").catch(function(){}); });
   }
 
+  var LINES = [
+    "拖延的人不缺计划，只缺一个开始。",
+    "别等状态好，先做两分钟状态就来了。",
+    "做不完没关系，开始了就算赢。",
+    "大脑说待会儿，身体先动起来。",
+    "两分钟很短，短到没有理由拒绝。"
+  ];
+  $("lead").textContent = LINES[new Date().getDate() % LINES.length];
   syncSound(); render();
 })();
 </script>

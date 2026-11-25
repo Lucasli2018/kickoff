@@ -144,6 +144,19 @@ input::placeholder{color:#a6b3b0}
 .toast{position:fixed;left:50%;bottom:32px;transform:translate(-50%,20px);z-index:95;background:#1b2b2b;color:#fff;
   font-size:13px;padding:11px 18px;border-radius:12px;opacity:0;transition:all .25s;pointer-events:none;max-width:88vw;text-align:center}
 .toast.show{opacity:1;transform:translate(-50%,0)}
+.rec-del{width:26px;height:26px;flex:none;border-radius:8px;color:#b0bbb8;font-size:17px;line-height:1;
+  display:flex;align-items:center;justify-content:center}
+.rec-del:active{background:var(--bg);color:var(--danger)}
+.modal{position:fixed;inset:0;z-index:70;background:rgba(27,43,43,.42);display:none;align-items:center;justify-content:center;padding:24px}
+.modal.show{display:flex}
+.modal-card{width:100%;max-width:340px;background:var(--surface);border-radius:18px;padding:22px;box-shadow:0 18px 50px rgba(0,0,0,.18)}
+.modal-card h3{margin:0 0 6px;font-size:17px}
+.modal-card p{margin:0 0 18px;color:var(--sub);font-size:12px;line-height:1.6}
+.modal-card button{display:block;width:100%;height:44px;border-radius:12px;background:var(--brand-wash);color:var(--brand-deep);
+  font-size:14px;font-weight:600;margin-bottom:9px}
+.modal-card button.danger{color:var(--danger)}
+.modal-card button.plain{background:transparent;color:var(--sub);font-weight:400;margin-bottom:0}
+@media (prefers-reduced-motion: reduce){ .cf{display:none} *{transition:none!important;animation:none!important} }
 </style>
 </head>
 <body>
@@ -192,7 +205,7 @@ input::placeholder{color:#a6b3b0}
   </section>
 
   <section class="card">
-    <div class="sec-title"><h3>最近启动</h3><span>每次开始都算数</span></div>
+    <div class="sec-title"><h3>最近启动</h3><span id="focusTotal">累计专注 0 分钟</span></div>
     <div id="history"></div>
   </section>
 
@@ -200,7 +213,7 @@ input::placeholder{color:#a6b3b0}
     <div class="quote">完成就打勾，没完成也没关系。</div>
     <button id="soundBtn">提示音：开</button>
     <button id="installBtn" class="hide">安装到主屏幕</button>
-    <button id="resetBtn">清空数据</button>
+    <button id="dataBtn">数据备份</button>
   </div>
 </div>
 
@@ -233,28 +246,48 @@ input::placeholder{color:#a6b3b0}
 <div id="confetti"></div>
 <div class="toast" id="toast"></div>
 
+<div class="modal" id="dataModal">
+  <div class="modal-card">
+    <h3>数据备份</h3>
+    <p>数据只存在这台设备上。换手机或清浏览器前，记得导出保存。</p>
+    <button id="exportBtn">导出 JSON 备份</button>
+    <button id="importBtn">从 JSON 恢复</button>
+    <button id="resetBtn" class="danger">清空数据</button>
+    <button id="closeModalBtn" class="plain">关闭</button>
+  </div>
+</div>
+<input type="file" id="importFile" accept="application/json,.json" class="hide">
+
 <script>
 (function(){
   "use strict";
   var KEY = "kickoff_data_v1";
   var LIMIT = 120;
   var CIRC = 2 * Math.PI * 113;
-  var DEF = { points:0, total:0, streak:0, best:0, lastDate:"", today:{date:"",count:0}, daily:{}, goalDay:"", history:[], ach:[], sound:true };
+  var DEF = { points:0, total:0, streak:0, best:0, lastDate:"", today:{date:"",count:0}, daily:{}, goalDay:"", focusSec:0, history:[], ach:[], sound:true };
   var GOAL = 3;
   var lastGoalHit = false;
-  var S;
-  try { S = Object.assign({}, DEF, JSON.parse(localStorage.getItem(KEY) || "{}")); }
-  catch(e) { S = Object.assign({}, DEF); }
-  if (!S.today || typeof S.today !== "object") S.today = {date:"",count:0};
-  if (!Array.isArray(S.history)) S.history = [];
-  if (!Array.isArray(S.ach)) S.ach = [];
-  if (!S.daily || typeof S.daily !== "object"){
-    S.daily = {};
-    S.history.forEach(function(h){
-      var ds = dstr(new Date(h.t));
-      S.daily[ds] = (S.daily[ds] || 0) + 1;
-    });
+
+  function normalizeData(d){
+    var n = Object.assign({}, DEF, d || {});
+    if (!n.today || typeof n.today !== "object") n.today = {date:"",count:0};
+    if (!Array.isArray(n.history)) n.history = [];
+    if (!Array.isArray(n.ach)) n.ach = [];
+    if (!n.daily || typeof n.daily !== "object"){
+      n.daily = {};
+      n.history.forEach(function(h){
+        var ds = dstr(new Date(h.t));
+        n.daily[ds] = (n.daily[ds] || 0) + 1;
+      });
+    }
+    n.points = Number(n.points) || 0;
+    n.total = Number(n.total) || 0;
+    n.focusSec = Number(n.focusSec) || 0;
+    return n;
   }
+  var S;
+  try { S = normalizeData(JSON.parse(localStorage.getItem(KEY) || "{}")); }
+  catch(e) { S = normalizeData({}); }
 
   var ACH = [
     {id:"first", n:"破冰", d:"第一次启动", s:"✦"},
@@ -298,6 +331,7 @@ input::placeholder{color:#a6b3b0}
       if (S.streak > S.best) S.best = S.streak;
     }
     S.total++; S.points += 10;
+    S.focusSec = (S.focusSec || 0) + (sec || 0);
     if (S.today.date !== t) S.today = {date:t, count:1}; else S.today.count++;
     S.daily[t] = (S.daily[t] || 0) + 1;
     var dkeys = Object.keys(S.daily).sort();
@@ -322,6 +356,7 @@ input::placeholder{color:#a6b3b0}
     $("lvName").textContent = "Lv." + li.lv + " " + li.name;
     $("lvBar").style.width = Math.min(100, li.cur) + "%";
     $("achCount").textContent = S.ach.length + " / " + ACH.length;
+    $("focusTotal").textContent = "累计专注 " + Math.round((S.focusSec || 0)/60) + " 分钟";
 
     var tc = S.today.date === t ? S.today.count : 0;
     $("goalText").textContent = tc >= GOAL ? "今日已达标 ✓" : ("今日目标 " + tc + "/" + GOAL);
@@ -343,13 +378,14 @@ input::placeholder{color:#a6b3b0}
     }).join("");
 
     var list = S.history.slice(0,5);
-    $("history").innerHTML = list.length ? list.map(function(h){
+    $("history").innerHTML = list.length ? list.map(function(h,idx){
       var d = new Date(h.t);
       var dur = h.sec >= 120 ? "2 分钟以上" : Math.max(1, Math.round(h.sec/60)) + " 分钟";
       return '<div class="rec"><span class="rec-dot"></span><div class="rec-body">'+
              '<div class="rec-task">'+esc(h.task)+'</div>'+
              '<div class="rec-meta">'+pad(d.getMonth()+1)+'/'+pad(d.getDate())+' '+pad(d.getHours())+':'+pad(d.getMinutes())+' · '+dur+'</div>'+
-             '</div><span class="rec-pt">+10</span></div>';
+             '</div><span class="rec-pt">+10</span>'+
+             '<button class="rec-del" data-del="'+idx+'" aria-label="删除这条记录">×</button></div>';
     }).join("") : '<div class="empty">还没有记录，写下第一件小事吧。</div>';
   }
 
@@ -568,10 +604,66 @@ input::placeholder{color:#a6b3b0}
     toast(a.n + " · " + a.d + (on ? "（已解锁）" : "（未解锁）"));
   });
 
+  $("history").addEventListener("click", function(e){
+    var b = e.target.closest("[data-del]"); if(!b) return;
+    var i = parseInt(b.getAttribute("data-del"), 10);
+    if (isNaN(i) || i < 0 || i >= S.history.length) return;
+    var h = S.history[i];
+    S.history.splice(i, 1);
+    S.total = Math.max(0, S.total - 1);
+    S.points = Math.max(0, S.points - 10);
+    S.focusSec = Math.max(0, (S.focusSec || 0) - (h.sec || 0));
+    var ds = dstr(new Date(h.t));
+    if (S.daily[ds]){ S.daily[ds]--; if (S.daily[ds] <= 0) delete S.daily[ds]; }
+    if (S.today.date === ds) S.today.count = Math.max(0, S.today.count - 1);
+    if (S.goalDay === ds && S.today.count < GOAL) S.goalDay = "";
+    save(); render(); toast("已删除这条记录");
+  });
+
   function syncSound(){ $("soundBtn").textContent = "提示音：" + (S.sound ? "开" : "关"); }
   $("soundBtn").addEventListener("click", function(){
     S.sound = !S.sound; save(); syncSound(); toast(S.sound ? "提示音已开启" : "提示音已关闭");
   });
+  function openModal(){ $("dataModal").classList.add("show"); }
+  function closeModal(){ $("dataModal").classList.remove("show"); }
+  $("dataBtn").addEventListener("click", openModal);
+  $("closeModalBtn").addEventListener("click", closeModal);
+  $("dataModal").addEventListener("click", function(e){ if(e.target === $("dataModal")) closeModal(); });
+
+  $("exportBtn").addEventListener("click", function(){
+    try{
+      var blob = new Blob([JSON.stringify(S, null, 2)], {type:"application/json"});
+      var url = URL.createObjectURL(blob);
+      var a = document.createElement("a");
+      a.href = url; a.download = "kickoff-backup-" + dstr() + ".json";
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(function(){ URL.revokeObjectURL(url); }, 1200);
+      toast("已导出备份文件");
+    }catch(err){ toast("导出失败，请重试"); }
+  });
+  $("importBtn").addEventListener("click", function(){ $("importFile").click(); });
+  $("importFile").addEventListener("change", function(e){
+    var f = e.target.files && e.target.files[0];
+    if (!f) return;
+    var reader = new FileReader();
+    reader.onload = function(){
+      var ok = false;
+      try{
+        var d = JSON.parse(String(reader.result));
+        if (d && typeof d === "object" && Array.isArray(d.history)){
+          S = normalizeData(d); ok = true;
+          save(); render(); syncSound();
+          toast("已恢复 " + S.history.length + " 条记录");
+        }
+      }catch(err){}
+      if (!ok) toast("文件格式不对，恢复失败");
+      $("importFile").value = "";
+      closeModal();
+    };
+    reader.onerror = function(){ toast("读取失败"); $("importFile").value = ""; };
+    reader.readAsText(f);
+  });
+
   var arm = false, armT;
   $("resetBtn").addEventListener("click", function(){
     var b = $("resetBtn");
@@ -581,8 +673,8 @@ input::placeholder{color:#a6b3b0}
       return;
     }
     clearTimeout(armT); arm = false; b.textContent = "清空数据"; b.classList.remove("arm");
-    S = Object.assign({}, DEF, {today:{date:"",count:0}, daily:{}, goalDay:"", history:[], ach:[]});
-    save(); render(); syncSound(); toast("已清空，重新开始就好");
+    S = normalizeData({});
+    save(); render(); syncSound(); closeModal(); toast("已清空，重新开始就好");
   });
 
   var deferred = null;
@@ -601,6 +693,16 @@ input::placeholder{color:#a6b3b0}
       var left = Math.max(0, Math.ceil((timer.endAt - Date.now())/1000));
       toast("还在启动中 · 剩 " + left + " 秒，回来继续");
       hiddenAt = 0;
+    }
+  });
+
+  document.addEventListener("keydown", function(e){
+    var tag = document.activeElement ? document.activeElement.tagName : "";
+    if (tag === "INPUT" || tag === "TEXTAREA" || tag === "BUTTON") return;
+    if (timer.phase === "idle" && (e.code === "Space" || e.key === " ")){
+      e.preventDefault(); startFocus();
+    } else if ((timer.phase === "run" || timer.phase === "done") && e.key === "Escape"){
+      closeFocus();
     }
   });
 

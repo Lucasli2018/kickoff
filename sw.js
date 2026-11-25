@@ -1,4 +1,4 @@
-var CACHE = "kickoff-v3";
+var CACHE = "kickoff-v4";
 var ASSETS = ["./", "./index.html", "./manifest.webmanifest", "./favicon.svg", "./icons/favicon.ico", "./icons/icon-180.png", "./icons/icon-192.png", "./icons/icon-512.png"];
 
 self.addEventListener("install", function(e){

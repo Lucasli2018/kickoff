@@ -81,6 +81,20 @@ input::placeholder{color:#a6b3b0}
 .week-day{font-size:10px;color:var(--sub);margin-top:4px}
 .week-cell.today .week-day{color:var(--brand);font-weight:700}
 .chip.dice{border-style:dashed;color:var(--brand-deep)}
+.picker{display:flex;align-items:flex-start;gap:9px;margin-bottom:9px}
+.picker+.picker{margin-bottom:18px}
+.picker-label{font-size:11px;color:var(--sub);flex:none;padding-top:6px;letter-spacing:.04em}
+.picker-chips{display:flex;flex-wrap:wrap;gap:7px}
+.picker-chips .chip{padding:5px 11px;font-size:12px}
+.dist-head{display:flex;justify-content:space-between;align-items:center;margin-top:16px;padding-top:14px;
+  border-top:1px solid var(--line);font-size:11px;color:var(--sub)}
+.dist-head b{color:var(--brand-deep);font-weight:600}
+.dist{margin-top:9px;display:grid;gap:7px}
+.dist-row{display:flex;align-items:center;gap:9px;font-size:11px;color:var(--sub)}
+.dist-name{width:42px;flex:none}
+.dist-track{flex:1;height:6px;border-radius:99px;background:var(--bg);border:1px solid var(--line);overflow:hidden}
+.dist-track>i{display:block;height:100%;background:var(--brand);border-radius:99px;transition:width .35s}
+.dist-num{width:18px;text-align:right;color:var(--ink);font-variant-numeric:tabular-nums}
 
 /* section title */
 .sec-title{display:flex;align-items:center;justify-content:space-between;margin:0 0 16px}
@@ -180,6 +194,17 @@ input::placeholder{color:#a6b3b0}
       <button class="chip" data-v="收拾桌面">收拾桌面</button>
       <button class="chip dice" id="ideaBtn">给我一件小事</button>
     </div>
+    <div class="picker"><span class="picker-label">时长</span><div class="picker-chips" id="durations">
+      <button class="chip" data-d="60">1 分钟</button>
+      <button class="chip" data-d="120">2 分钟</button>
+      <button class="chip" data-d="300">5 分钟</button>
+    </div></div>
+    <div class="picker"><span class="picker-label">归类</span><div class="picker-chips" id="tagbar">
+      <button class="chip" data-t="工作">工作</button>
+      <button class="chip" data-t="学习">学习</button>
+      <button class="chip" data-t="生活">生活</button>
+      <button class="chip" data-t="随手">随手</button>
+    </div></div>
     <button class="launch" id="launchBtn">启动 2 分钟</button>
     <div class="hint">不要求做完，只要开始。</div>
   </section>
@@ -197,6 +222,8 @@ input::placeholder{color:#a6b3b0}
     <div class="bar"><i id="lvBar" style="width:0%"></i></div>
     <div class="week-head"><span>最近 7 天</span><b id="goalText">今日目标 0/3</b></div>
     <div class="week" id="weekLine"></div>
+    <div class="dist-head"><span>本周归类</span><b id="distTotal">0 次</b></div>
+    <div class="dist" id="dist"></div>
   </section>
 
   <section class="card">
@@ -262,9 +289,10 @@ input::placeholder{color:#a6b3b0}
 (function(){
   "use strict";
   var KEY = "kickoff_data_v1";
-  var LIMIT = 120;
+  var DURS = [60, 120, 300];
+  var TAGS = ["工作","学习","生活","随手"];
   var CIRC = 2 * Math.PI * 113;
-  var DEF = { points:0, total:0, streak:0, best:0, lastDate:"", today:{date:"",count:0}, daily:{}, goalDay:"", focusSec:0, history:[], ach:[], sound:true };
+  var DEF = { points:0, total:0, streak:0, best:0, lastDate:"", today:{date:"",count:0}, daily:{}, goalDay:"", focusSec:0, history:[], ach:[], sound:true, dur:120, tag:"" };
   var GOAL = 3;
   var lastGoalHit = false;
 
@@ -283,6 +311,8 @@ input::placeholder{color:#a6b3b0}
     n.points = Number(n.points) || 0;
     n.total = Number(n.total) || 0;
     n.focusSec = Number(n.focusSec) || 0;
+    if (DURS.indexOf(n.dur) < 0) n.dur = 120;
+    if (typeof n.tag !== "string") n.tag = "";
     return n;
   }
   var S;
@@ -323,7 +353,7 @@ input::placeholder{color:#a6b3b0}
     return got;
   }
 
-  function markDone(task, sec){
+  function markDone(task, sec, tag){
     var t = dstr();
     if (S.lastDate !== t){
       S.streak = diffDays(S.lastDate, t) === 1 ? S.streak + 1 : 1;
@@ -338,7 +368,7 @@ input::placeholder{color:#a6b3b0}
     if (dkeys.length > 30) dkeys.slice(0, dkeys.length - 30).forEach(function(k){ delete S.daily[k]; });
     lastGoalHit = false;
     if (S.today.count === GOAL && S.goalDay !== t){ S.goalDay = t; lastGoalHit = true; }
-    S.history.unshift({t:Date.now(), task:task || "一次启动", sec:sec});
+    S.history.unshift({t:Date.now(), task:task || "一次启动", sec:sec, tag:tag || ""});
     S.history = S.history.slice(0, 40);
     var got = checkAch();
     save(); render();
@@ -380,14 +410,41 @@ input::placeholder{color:#a6b3b0}
     var list = S.history.slice(0,5);
     $("history").innerHTML = list.length ? list.map(function(h,idx){
       var d = new Date(h.t);
-      var dur = h.sec >= 120 ? "2 分钟以上" : Math.max(1, Math.round(h.sec/60)) + " 分钟";
+      var dur = h.sec >= 60 ? Math.max(1, Math.round(h.sec/60)) + " 分钟" : "不到 1 分钟";
+      var tagTxt = h.tag ? " · " + esc(h.tag) : "";
       return '<div class="rec"><span class="rec-dot"></span><div class="rec-body">'+
              '<div class="rec-task">'+esc(h.task)+'</div>'+
-             '<div class="rec-meta">'+pad(d.getMonth()+1)+'/'+pad(d.getDate())+' '+pad(d.getHours())+':'+pad(d.getMinutes())+' · '+dur+'</div>'+
+             '<div class="rec-meta">'+pad(d.getMonth()+1)+'/'+pad(d.getDate())+' '+pad(d.getHours())+':'+pad(d.getMinutes())+' · '+dur+tagTxt+'</div>'+
              '</div><span class="rec-pt">+10</span>'+
              '<button class="rec-del" data-del="'+idx+'" aria-label="删除这条记录">×</button></div>';
     }).join("") : '<div class="empty">还没有记录，写下第一件小事吧。</div>';
+
+    var from = new Date(); from.setHours(0,0,0,0); from.setDate(from.getDate()-6);
+    var fromS = dstr(from);
+    var counts = { "未归类":0 };
+    var weekTotal = 0;
+    TAGS.forEach(function(g){ counts[g] = 0; });
+    S.history.forEach(function(h){
+      if (!h || !h.t) return;
+      var ds = dstr(new Date(h.t));
+      if (ds < fromS) return;
+      weekTotal++;
+      var g = TAGS.indexOf(h.tag) >= 0 ? h.tag : "未归类";
+      counts[g]++;
+    });
+    var rows = TAGS.slice();
+    if (counts["未归类"]) rows.push("未归类");
+    var max = 1;
+    rows.forEach(function(g){ if (counts[g] > max) max = counts[g]; });
+    $("distTotal").textContent = weekTotal + " 次";
+    $("dist").innerHTML = rows.map(function(g){
+      return '<div class="dist-row"><span class="dist-name">'+g+'</span>'+
+             '<span class="dist-track"><i style="width:'+Math.round(counts[g]/max*100)+'%"></i></span>'+
+             '<span class="dist-num">'+counts[g]+'</span></div>';
+    }).join("");
   }
+
+  function fmtMin(sec){ return Math.round(sec/60) + " 分钟"; }
 
   // browser tab icon: static by default, live countdown ring while running
   var favLinks = document.querySelectorAll('link[rel="icon"]');
@@ -418,7 +475,7 @@ input::placeholder{color:#a6b3b0}
     c.strokeStyle = "rgba(255,255,255,.28)";
     c.lineWidth = 6;
     c.beginPath(); c.arc(32,32,19,0,Math.PI*2); c.stroke();
-    var ratio = Math.max(0, Math.min(1, left / LIMIT));
+    var ratio = Math.max(0, Math.min(1, left / S.dur));
     if (ratio > 0){
       c.strokeStyle = "#ffffff";
       c.lineWidth = 6;
@@ -496,13 +553,15 @@ input::placeholder{color:#a6b3b0}
     }
   }
 
-  var timer = { phase:"idle", endAt:0, startAt:0, task:"", sec:0, raf:0 };
+  var timer = { phase:"idle", endAt:0, startAt:0, task:"", tag:"", limit:120, sec:0, raf:0 };
   function startFocus(){
     var task = $("taskInput").value.trim();
     timer.task = task;
+    timer.tag = S.tag || "";
+    timer.limit = S.dur;
     timer.phase = "run";
     timer.startAt = Date.now();
-    timer.endAt = timer.startAt + LIMIT*1000;
+    timer.endAt = timer.startAt + timer.limit*1000;
     $("fTask").textContent = task || "就现在，先开始";
     $("runPanel").classList.remove("hide");
     $("donePanel").classList.add("hide");
@@ -513,7 +572,7 @@ input::placeholder{color:#a6b3b0}
   function tick(){
     if (timer.phase !== "run") return;
     var left = Math.max(0, Math.ceil((timer.endAt - Date.now())/1000));
-    var ratio = left / LIMIT;
+    var ratio = left / timer.limit;
     $("fTime").textContent = pad(Math.floor(left/60)) + ":" + pad(left%60);
     $("ringFg").style.strokeDashoffset = (CIRC * (1-ratio)).toFixed(1);
     drawFavicon(left);
@@ -525,12 +584,12 @@ input::placeholder{color:#a6b3b0}
     cancelAnimationFrame(timer.raf);
     resetFavicon();
     if (natural) dingEnd();
-    timer.sec = natural ? LIMIT : Math.max(1, Math.round((Date.now()-timer.startAt)/1000));
+    timer.sec = natural ? timer.limit : Math.max(1, Math.round((Date.now()-timer.startAt)/1000));
     $("runPanel").classList.add("hide");
     $("donePanel").classList.remove("hide");
-    $("dTitle").textContent = natural ? "2 分钟到了" : "很好，你开始了";
+    $("dTitle").textContent = natural ? (fmtMin(timer.limit) + "到了") : "很好，你开始了";
     $("dSub").textContent = natural ? "刚才这段时间，做到了吗？" : "哪怕只有一小步，也算数。";
-    $("dTime").textContent = natural ? "完整 2 分钟 · +10 分" : "已用 " + timer.sec + " 秒 · +10 分";
+    $("dTime").textContent = natural ? ("完整 " + fmtMin(timer.limit) + " · +10 分") : ("已用 " + timer.sec + " 秒 · +10 分");
   }
   function closeFocus(){
     timer.phase = "idle";
@@ -539,7 +598,7 @@ input::placeholder{color:#a6b3b0}
     $("focus").classList.remove("show");
   }
   function commitDone(){
-    var got = markDone(timer.task, timer.sec);
+    var got = markDone(timer.task, timer.sec, timer.tag);
     closeFocus();
     celebrate(); ding();
     var parts = [];
@@ -573,8 +632,31 @@ input::placeholder{color:#a6b3b0}
     toast("换了一件小事，点启动就行");
   }
 
+  function syncPrefs(){
+    $("launchBtn").textContent = "启动 " + fmtMin(S.dur);
+    $("againBtn").textContent = "再来 " + fmtMin(S.dur);
+    var d = $("durations").querySelectorAll(".chip");
+    for (var i=0;i<d.length;i++) d[i].classList.toggle("on", Number(d[i].getAttribute("data-d")) === S.dur);
+    var g = $("tagbar").querySelectorAll(".chip");
+    for (var j=0;j<g.length;j++) g[j].classList.toggle("on", g[j].getAttribute("data-t") === S.tag);
+  }
+
   // events
   $("launchBtn").addEventListener("click", startFocus);
+  $("durations").addEventListener("click", function(e){
+    var b = e.target.closest("[data-d]"); if(!b) return;
+    var v = Number(b.getAttribute("data-d"));
+    if (DURS.indexOf(v) < 0) return;
+    S.dur = v; save(); syncPrefs();
+    toast("时长已设为 " + fmtMin(v));
+  });
+  $("tagbar").addEventListener("click", function(e){
+    var b = e.target.closest("[data-t]"); if(!b) return;
+    var v = b.getAttribute("data-t");
+    S.tag = (S.tag === v) ? "" : v;
+    save(); syncPrefs();
+    toast(S.tag ? ("归类为「" + S.tag + "」") : "已取消归类");
+  });
   $("taskInput").addEventListener("keydown", function(e){ if(e.key === "Enter") startFocus(); });
   $("quick").addEventListener("click", function(e){
     var b = e.target.closest(".chip"); if(!b) return;
@@ -652,7 +734,7 @@ input::placeholder{color:#a6b3b0}
         var d = JSON.parse(String(reader.result));
         if (d && typeof d === "object" && Array.isArray(d.history)){
           S = normalizeData(d); ok = true;
-          save(); render(); syncSound();
+          save(); syncPrefs(); render(); syncSound();
           toast("已恢复 " + S.history.length + " 条记录");
         }
       }catch(err){}
@@ -674,7 +756,7 @@ input::placeholder{color:#a6b3b0}
     }
     clearTimeout(armT); arm = false; b.textContent = "清空数据"; b.classList.remove("arm");
     S = normalizeData({});
-    save(); render(); syncSound(); closeModal(); toast("已清空，重新开始就好");
+    save(); syncPrefs(); render(); syncSound(); closeModal(); toast("已清空，重新开始就好");
   });
 
   var deferred = null;
@@ -718,7 +800,7 @@ input::placeholder{color:#a6b3b0}
     "两分钟很短，短到没有理由拒绝。"
   ];
   $("lead").textContent = LINES[new Date().getDate() % LINES.length];
-  syncSound(); render();
+  syncPrefs(); syncSound(); render();
 })();
 </script>
 </body>
